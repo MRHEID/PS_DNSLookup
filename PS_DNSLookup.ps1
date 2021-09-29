@@ -1,6 +1,6 @@
 PARAM (
     [Parameter(mandatory=$True,position=1)]
-    [string] $InputList, #Looking for a list.  when calling script make sure this is an array and not a text input
+    [string[]] $InputList, #Looking for a list.  when calling script make sure this is an array and not a text input
     [Parameter(mandatory=$True,position=2)]
     [string] $OutputFile #name of CSV Output File
 )
@@ -19,6 +19,13 @@ Foreach ($item in $InputList){
     IF ($item -match '^\d+\.\d+\.\d+\.\d+'){  # Regex looking for IP pattern
         Write-Host "Forward Lookup: $item"
         $result = [system.net.dns]::GetHostByAddress($item) # NSLookup using .net on IP
+        if($Null -eq $Result){
+            $Result = New-Object PSObject -property @{
+                Hostname = "ERROR"
+                AddressList = $item
+                Aliases = @("ERROR") #Easier to put it into an array... :(
+            }
+        }
     }
     
     Else {
@@ -28,26 +35,41 @@ Foreach ($item in $InputList){
             $Result = New-Object PSObject -property @{
                 Hostname = $item
                 AddressList = "ERROR"
-                Aliases = "ERROR"
+                Aliases = @("ERROR") #Easier to put it into an array... :(
             }
         }
     }
-    <###  If there's multiple IPs in the address list this will make it a single string  ###>
-    $PTRList = $NULL  #Null the string
-    foreach ($PTR in $Result.AddressList){ #loop throught he reverse_ptr list
-        if($NULL -eq $PTRList){ # if this is the first one, add the address without the ;
-            $PTRList = $PTR
-        }
-        Else { # append additional addresses to $PTR with a ; between
-            $PTRList = $PTRList + ";" + $PTR
-        }
-    }
     
+    IF($Result.Aliases[0] -ne "ERROR"){  #Forget all this formatting if there's an ERROR  
+        <###  If there's multiple IPs in the address list this will make it a single string  ###>
+        $PTRList = $NULL  #Null the string
+        foreach ($PTR in $Result.AddressList){ #loop throught he reverse_ptr list
+            if($NULL -eq $PTRList){ # if this is the first one, add the address without the ;
+                $PTRList = $PTR.IPAddressToString
+            }
+            Else { # append additional addresses to $PTR with a ; between
+                $PTRList = $PTRList + ";" + $PTR.IPAddressToString
+            }
+        }
+        <###  If there's multiple IPs in the address list this will make it a single string  ###>
+        $CNAMEList = $NULL  #Null the string
+        foreach ($CNAME in $Result.Aliases){ #loop throught he reverse_ptr list
+            if($NULL -eq $CNAMEList){ # if this is the first one, add the address without the ;
+                $CNAMEList = $CNAME
+            }
+            Else { # append additional addresses to $PTR with a ; between
+                $CNAMEList = $CNAMEList + ";" + $CNAME
+            }
+        }
+    } ELSE {
+        $PTRLIST = $Result.AddressList
+        $CNAMEList = $Result.Aliases[0] #easier to put it into an array... :(
+    }
     <###  Append results to the $output Object  ###>   
     $output += New-Object PSObject -property @{
         Reverse_PTR = $PTRList
         A_Record = $Result.HostName
-        CNAME_Record = $Result.Aliases 
+        CNAME_Record = $CNAMEList 
     }
 }
 
